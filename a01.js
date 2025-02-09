@@ -4,20 +4,92 @@
   Modified by: Amir Mohammad Esmaieeli Sikaroudi
   Email: amesmaieeli@email.arizona.edu
 */
-
+/*
+Modified further by: Ethan Gunn Wong
+Email: egwong@arizona.edu
+Modifications:
+    added rotation functionality
+    used an animate() function modularize code 
+while there was a lot of code added, the part i believe 
+Efrat cares about the most is the 3 matricies modifications 
+(transformation toZer0) (rotational) (transformation back2origin)
+*/
 
 //access DOM elements we'll use
 var input = document.getElementById("load_image");
 var canvas = document.getElementById('canvas');
 var ctx = canvas.getContext('2d');
-
-// The width and height of the image
+// other vars/lets/consts which are vars in my mind
 var width = 0;
 var height = 0;
-// The image data
 var ppm_img_data;
+let currAngle = 0;
+const ROTATION_SPEED = 1;
 
-//Function to process upload
+// no anti-aliasing
+// if there is someone actually reading these comments
+// know that i hate anti-aliasing because it makes enemies harder to see in video games
+function animate() {
+    // update curr angle 
+    currAngle = (currAngle + ROTATION_SPEED) % 360;
+    
+    // Create a new image data object to hold the new image
+    var newImageData = ctx.createImageData(width, height);
+    
+
+    // move to 0,0 (translation)
+    // rotate (rotation)
+    // move back to original (translation)
+    // the math joke
+    let toZer0 = GetTranslationMatrix(-width/2, -height/2); // move center to 0,0
+    let rotation = GetRotationMatrix(currAngle);
+    let back2origin = GetTranslationMatrix(width/2, height/2);
+    
+    // combine to one transformation
+    // back2orign * rotation * toZer0
+    let rotation_and_zer0 = MultiplyMatrixMatrix(rotation, toZer0);
+    let finalTransform = MultiplyMatrixMatrix(back2origin, rotation_and_zer0);
+    
+    // apply finalTransformation to each pixel
+    for (var i = 0; i < ppm_img_data.data.length; i += 4) {
+        var pixel = [
+            Math.floor(i / 4) % width,
+            Math.floor(i / 4 / width),
+            1
+        ];
+        
+        // apply the finalTransformation
+        var transformedPixel = MultiplyMatrixVector(finalTransform, pixel);
+        
+        // nearest pixel rounding
+        transformedPixel[0] = Math.round(transformedPixel[0]);
+        transformedPixel[1] = Math.round(transformedPixel[1]);
+        
+        // within bounds check
+        // allowed "chopping" of edges, specified in spec
+        if (transformedPixel[0] >= 0 && transformedPixel[0] < width &&
+            transformedPixel[1] >= 0 && transformedPixel[1] < height) {
+            
+            let destOffset = i;
+            let srcOffset = (transformedPixel[1] * width + transformedPixel[0]) * 4;
+            
+            newImageData.data[destOffset] = ppm_img_data.data[srcOffset];
+            newImageData.data[destOffset + 1] = ppm_img_data.data[srcOffset + 1];
+            newImageData.data[destOffset + 2] = ppm_img_data.data[srcOffset + 2];
+            newImageData.data[destOffset + 3] = 255;
+        }
+    }
+    
+    // Draw the new image
+    ctx.putImageData(newImageData, canvas.width/2 - width/2, canvas.height/2 - height/2);
+    
+    // Show matrix
+    showMatrix(finalTransform);
+    
+    // request
+    requestAnimationFrame(animate);
+}
+
 var upload = function () {
     if (input.files.length > 0) {
         var file = input.files[0];
@@ -27,47 +99,13 @@ var upload = function () {
         fReader.readAsBinaryString(file);
 
         fReader.onload = function(e) {
-            //if successful, file data has the contents of the uploaded file
             var file_data = fReader.result;
             parsePPM(file_data);
-
-            /*
-            * TODO: ADD CODE HERE TO DO 2D TRANSFORMATION and ANIMATION
-            * Modify any code if needed
-            * Hint: Write a rotation method, and call WebGL APIs to reuse the method for animation
-            */
-	    
-            // *** The code below is for the template to show you how to use matrices and update pixels on the canvas.
-            // *** Modify/remove the following code and implement animation
-
-	    // Create a new image data object to hold the new image
-            var newImageData = ctx.createImageData(width, height);
-	    var transMatrix = GetTranslationMatrix(0, height);// Translate image
-	    var scaleMatrix = GetScalingMatrix(1, -1);// Flip image y axis
-	    var matrix = MultiplyMatrixMatrix(transMatrix, scaleMatrix);// Mix the translation and scale matrices
             
-            // Loop through all the pixels in the image and set its color
-            for (var i = 0; i < ppm_img_data.data.length; i += 4) {
-
-                // Get the pixel location in x and y with (0,0) being the top left of the image
-                var pixel = [Math.floor(i / 4) % width, 
-                             Math.floor(i / 4) / width, 1];
-        
-                // Get the location of the sample pixel
-                var samplePixel = MultiplyMatrixVector(matrix, pixel);
-
-                // Floor pixel to integer
-                samplePixel[0] = Math.floor(samplePixel[0]);
-                samplePixel[1] = Math.floor(samplePixel[1]);
-
-                setPixelColor(newImageData, samplePixel, i);
-            }
-
-            // Draw the new image
-            ctx.putImageData(newImageData, canvas.width/2 - width/2, canvas.height/2 - height/2);
-	    
-	    // Show matrix
-            showMatrix(matrix);
+            // set currAngle
+            // animate
+            currAngle = 0;
+            animate();
         }
     }
 }
